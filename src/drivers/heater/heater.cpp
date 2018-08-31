@@ -60,7 +60,7 @@ Heater::Heater() :
 	_integrator_value(0.0f),
 	_proportional_value(0.0f),
 	_sensor_accel(sensor_accel_s{}),
-	_sensor_accel_subscription(-1),
+	_sensor_accel_sub(-1),
 	_sensor_temperature(0.0f)
 {
 	px4_arch_configgpio(GPIO_HEATER_OUTPUT);
@@ -148,6 +148,10 @@ int Heater::custom_command(int argc, char *argv[])
 void Heater::cycle()
 {
 	if (should_exit()) {
+		exit_and_cleanup();
+		orb_unsubscribe(_params_sub);
+		orb_unsubscribe(_sensor_accel_sub);
+		PX4_INFO("Exiting.");
 		return;
 	}
 
@@ -166,7 +170,7 @@ void Heater::cycle()
 	} else {
 		update_params(false);
 
-		orb_update(ORB_ID(sensor_accel), _sensor_accel_subscription, &_sensor_accel);
+		orb_update(ORB_ID(sensor_accel), _sensor_accel_sub, &_sensor_accel);
 
 		// Obtain the current IMU sensor temperature.
 		_sensor_temperature = _sensor_accel.temperature;
@@ -238,13 +242,13 @@ void Heater::initialize_topics()
 
 	// Check each instance for the correct ID.
 	for (size_t x = 0; x < number_of_imus; x++) {
-		_sensor_accel_subscription = orb_subscribe_multi(ORB_ID(sensor_accel), (int)x);
+		_sensor_accel_sub = orb_subscribe_multi(ORB_ID(sensor_accel), (int)x);
 
-		while (orb_update(ORB_ID(sensor_accel), _sensor_accel_subscription, &_sensor_accel) != PX4_OK) {
+		while (orb_update(ORB_ID(sensor_accel), _sensor_accel_sub, &_sensor_accel) != PX4_OK) {
 			usleep(200000);
 		}
 
-		// If the correct ID is found, exit the for-loop with _sensor_accel_subscription pointing to the correct instance.
+		// If the correct ID is found, exit the for-loop with _sensor_accel_sub pointing to the correct instance.
 		if (_sensor_accel.device_id == (uint32_t)_p_sensor_id.get()) {
 			PX4_INFO("Found Sensor to Temp Compensate");
 			break;
@@ -372,7 +376,7 @@ int Heater::start()
 		PX4_INFO("Heater driver already running");
 		return PX4_ERROR;
 	}
-	PX4_INFO("Do we get here?");
+
 	update_params(true);
 	initialize_topics();
 

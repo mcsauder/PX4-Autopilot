@@ -240,7 +240,7 @@ private:
 	struct sensor_accel_s _sensor_accel;
 
 	/** @param _sensor_accel_sub The accelerometer subtopic subscribed to.*/
-	int _sensor_accel_subscription;
+	int _sensor_accel_sub;
 
 	/** @param _sensor_temperature The sensor's reported temperature. */
 	float _sensor_temperature;
