@@ -148,10 +148,9 @@ int Heater::custom_command(int argc, char *argv[])
 void Heater::cycle()
 {
 	if (should_exit()) {
-		exit_and_cleanup();
 		orb_unsubscribe(_params_sub);
 		orb_unsubscribe(_sensor_accel_sub);
-		PX4_INFO("Exiting.");
+		exit_and_cleanup();
 		return;
 	}
 
@@ -260,7 +259,7 @@ void Heater::initialize_topics()
 	// Exit the driver if the sensor ID does not match the desired sensor.
 	if (_sensor_accel.device_id != (uint32_t)_p_sensor_id.get()) {
 		request_stop();
-		PX4_INFO("Could not find sensor to control temperature");
+		PX4_ERR("Could not find sensor to control temperature");
 	}
 }
 
@@ -383,7 +382,7 @@ int Heater::start()
 	// Kick off the cycling. We can call it directly because we're already in the work queue context
 	cycle();
 
-	PX4_INFO("Heater driver started successfully.");
+	PX4_INFO("Heater started.");
 
 	return PX4_OK;
 }
