@@ -53,7 +53,7 @@
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_0, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT0_ROT, 0);
 
 
 /**
@@ -79,7 +79,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_0, 0);
  */
 
 
-PARAM_DEFINE_INT32(MPYDT_ORIEN_1, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT1_ROT, 0);
 /**
  * Mappy Dot 2
  *
@@ -101,7 +101,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_1, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_2, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT2_ROT, 0);
 
 /**
  * Mappy Dot 3
@@ -124,7 +124,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_2, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_3, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT3_ROT, 0);
 
 /**
  * Mappy Dot 4
@@ -147,7 +147,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_3, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_4, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT4_ROT, 0);
 
 /**
  * Mappy Dot 5
@@ -170,7 +170,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_4, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_5, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT5_ROT, 0);
 
 /**
  * Mappy Dot 6
@@ -193,7 +193,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_5, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_6, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT6_ROT, 0);
 
 /**
  * Mappy Dot 7
@@ -216,7 +216,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_6, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_7, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT7_ROT, 0);
 
 /**
  * Mappy Dot 8
@@ -239,7 +239,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_7, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_8, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT8_ROT, 0);
 
 /**
  * Mappy Dot 9
@@ -262,7 +262,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_8, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_9, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT9_ROT, 0);
 
 /**
  * Mappy Dot 10
@@ -285,7 +285,7 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_9, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_10, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT10_ROT, 0);
 
 /**
  * Mappy Dot 11
@@ -308,4 +308,4 @@ PARAM_DEFINE_INT32(MPYDT_ORIEN_10, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(MPYDT_ORIEN_11, 0);
+PARAM_DEFINE_INT32(SENS_MPYDT11_ROT, 0);

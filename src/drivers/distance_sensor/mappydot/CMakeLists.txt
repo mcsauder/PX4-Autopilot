@@ -35,6 +35,6 @@ px4_add_module(
 	MAIN mappydot
 	COMPILE_FLAGS
 	SRCS
-		mappydot.cpp
+		MappyDot.cpp
 	DEPENDS
 	)
