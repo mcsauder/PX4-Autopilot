@@ -32,118 +32,89 @@
  ****************************************************************************/
 
 /**
- * @file mappydot.cpp
+ * @file MappyDot.cpp
  * @author Mohammed Kabir (mhkabir@mit.edu)
  *
  * Driver for the Mappydot infrared rangefinders connected via I2C.
  */
 
 
-#include <fcntl.h>
-#include <math.h>
-#include <poll.h>
-#include <semaphore.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
+#include "MappyDot.h"
 
-#include <board_config.h>
-#include <containers/Array.hpp>
-#include <drivers/device/i2c.h>
-#include <drivers/device/ringbuffer.h>
-#include <drivers/drv_hrt.h>
-#include <drivers/drv_range_finder.h>
-#include <px4_config.h>
-#include <px4_getopt.h>
-#include <px4_workqueue.h>
-#include <parameters/param.h>
-#include <perf/perf_counter.h>
-#include <uORB/uORB.h>
-#include <uORB/topics/distance_sensor.h>
-#include <sys/types.h>
-
-
-/* Configuration Constants */
-#define MAPPYDOT_BUS_DEFAULT                            PX4_I2C_BUS_EXPANSION2
-#define MAPPYDOT_BASE_ADDR                              0x08
-#define MAPPYDOT_DEVICE_PATH                            "/dev/mappydot"
 
 /* MappyDot Registers */
 /* Basics */
-#define MAPPYDOT_CHECK_INTERRUPT                            0x49
 #define MAPPYDOT_MEASUREMENT_BUDGET                         0x42
-#define MAPPYDOT_PERFORM_SINGLE_RANGE                       0x53
-#define MAPPYDOT_RANGING_MEASUREMENT_MODE                   0x6d
-#define MAPPYDOT_READ_ACCURACY                              0x52
-#define MAPPYDOT_READ_DISTANCE                              0x72
 #define MAPPYDOT_READ_ERROR_CODE                            0x45
+#define MAPPYDOT_CHECK_INTERRUPT                            0x49
+#define MAPPYDOT_READ_ACCURACY                              0x52
+#define MAPPYDOT_PERFORM_SINGLE_RANGE                       0x53
 #define MAPPYDOT_SET_CONTINUOUS_RANGING_MODE                0x63
+#define MAPPYDOT_RANGING_MEASUREMENT_MODE                   0x6D
+#define MAPPYDOT_READ_DISTANCE                              0x72
 #define MAPPYDOT_SET_SINGLE_RANGING_MODE                    0x73
 
 /* Configuration */
-#define MAPPYDOT_AVERAGING_ENABLE                           0x56
-#define MAPPYDOT_AVERAGING_DISABLE                          0x76
-#define MAPPYDOT_AVERAGING_SAMPLES                          0x69
-#define MAPPYDOT_CALIBRATE_DISTANCE_OFFSET                  0x61
-#define MAPPYDOT_CALIBRATE_CROSSTALK                        0x78
-#define MAPPYDOT_CALIBRATE_SPAD                             0x75
-#define MAPPYDOT_DISABLE_CROSSTALK_COMPENSATION             0x6b
-#define MAPPYDOT_ENABLE_CROSSTALK_COMPENSATION              0x4b
 #define MAPPYDOT_FILTERING_ENABLE                           0x46
-#define MAPPYDOT_FILTERING_DISABLE                          0x66
+#define MAPPYDOT_SIGNAL_LIMIT_CHECK_VALUE                   0x47
+#define MAPPYDOT_ENABLE_CROSSTALK_COMPENSATION              0x4B
+#define MAPPYDOT_SIGMA_LIMIT_CHECK_VALUE                    0x4C
 #define MAPPYDOT_INTERSENSOR_CROSSTALK_MEASUREMENT_DELAY    0x51
 #define MAPPYDOT_INTERSENSOR_CROSSTALK_REDUCTION_ENABLE     0x54
-#define MAPPYDOT_INTERSENSOR_CROSSTALK_REDUCTION_DISABLE    0x74
-#define MAPPYDOT_INTERSENSOR_CROSSTALK_TIMEOUT              0x71
+#define MAPPYDOT_AVERAGING_ENABLE                           0x56
 #define MAPPYDOT_INTERSENSOR_SYNC_ENABLE                    0x59
-#define MAPPYDOT_INTERSENSOR_SYNC_DISABLE                   0x79
-#define MAPPYDOT_REGION_OF_INTEREST                         0x70
-#define MAPPYDOT_SET_GPIO_MODE                              0x67
-#define MAPPYDOT_SET_GPIO_THRESHOLD_DISTANCE_IN_MM          0x6f
-#define MAPPYDOT_SET_LED_MODE                               0x6c
+#define MAPPYDOT_CALIBRATE_DISTANCE_OFFSET                  0x61
 #define MAPPYDOT_SET_LED_THRESHOLD_DISTANCE_IN_MM           0x65
-#define MAPPYDOT_SIGMA_LIMIT_CHECK_VALUE                    0x4C
-#define MAPPYDOT_SIGNAL_LIMIT_CHECK_VALUE                   0x47
+#define MAPPYDOT_FILTERING_DISABLE                          0x66
+#define MAPPYDOT_SET_GPIO_MODE                              0x67
+#define MAPPYDOT_AVERAGING_SAMPLES                          0x69
+#define MAPPYDOT_DISABLE_CROSSTALK_COMPENSATION             0x6B
+#define MAPPYDOT_SET_LED_MODE                               0x6C
+#define MAPPYDOT_SET_GPIO_THRESHOLD_DISTANCE_IN_MM          0x6F
+#define MAPPYDOT_REGION_OF_INTEREST                         0x70
+#define MAPPYDOT_INTERSENSOR_CROSSTALK_TIMEOUT              0x71
+#define MAPPYDOT_INTERSENSOR_CROSSTALK_REDUCTION_DISABLE    0x74
+#define MAPPYDOT_CALIBRATE_SPAD                             0x75
+#define MAPPYDOT_AVERAGING_DISABLE                          0x76
+#define MAPPYDOT_CALIBRATE_CROSSTALK                        0x78
+#define MAPPYDOT_INTERSENSOR_SYNC_DISABLE                   0x79
 
 /* Settings */
-#define MAPPYDOT_DEVICE_NAME                                0x64
-#define MAPPYDOT_FIRMWARE_VERSION                           0x4e
-#define MAPPYDOT_NAME_DEVICE                                0x6e
+#define MAPPYDOT_FIRMWARE_VERSION                           0x4E
 #define MAPPYDOT_READ_CURRENT_SETTINGS                      0x62
-#define MAPPYDOT_RESTORE_FACTORY_DEFAULTS                   0x7a
+#define MAPPYDOT_DEVICE_NAME                                0x64
+#define MAPPYDOT_NAME_DEVICE                                0x6E
 #define MAPPYDOT_WRITE_CURRENT_SETTINGS_AS_START_UP_DEFAULT 0x77
+#define MAPPYDOT_RESTORE_FACTORY_DEFAULTS                   0x7A
 
 /* Advanced */
 #define MAPPYDOT_AMBIENT_RATE_RETURN                        0x41
-#define MAPPYDOT_READ_NONFILTERED_VALUE                     0x6a
-#define MAPPYDOT_RESET_VL53L1X_RANGING                      0x58
-#define MAPPYDOT_SIGNAL_RATE_RETURN                         0x4A
 #define MAPPYDOT_VL53L1X_NOT_SHUTDOWN                       0x48
+#define MAPPYDOT_SIGNAL_RATE_RETURN                         0x4A
+#define MAPPYDOT_RESET_VL53L1X_RANGING                      0x58
 #define MAPPYDOT_VL53L1X_SHUTDOWN                           0x68
+#define MAPPYDOT_READ_NONFILTERED_VALUE                     0x6A
 
 /* Super Advanced */
 #define MAPPYDOT_ENTER_FACTORY_MODE                         0x23 //"#"//"!#!#!#"
-#define MAPPYDOT_WIPE_ALL_SETTINGS                          0x3c //"<"//"><><><" (Must be in factory mode)
+#define MAPPYDOT_WIPE_ALL_SETTINGS                          0x3C //"<"//"><><><" (Must be in factory mode)
 
 /* Ranging Modes */
-#define MAPPYDOT_LONG_RANGE                                 0x6c
-#define MAPPYDOT_MED_RANGE                                  0x6d
+#define MAPPYDOT_LONG_RANGE                                 0x6C
+#define MAPPYDOT_MED_RANGE                                  0x6D
 #define MAPPYDOT_SHORT_RANGE                                0x73
 
 /* LED Modes */
 #define MAPPYDOT_LED_OFF                                    0x66
-#define MAPPYDOT_LED_ON                                     0x6f
-#define MAPPYDOT_LED_MEASUREMENT_OUTPUT                     0x6d
+#define MAPPYDOT_LED_MEASUREMENT_OUTPUT                     0x6D
+#define MAPPYDOT_LED_ON                                     0x6F
 #define MAPPYDOT_LED_PWM_ENABLED                            0x70
 #define MAPPYDOT_LED_THRESHOLD_ENABLED                      0x74
 
 /* GPIO Modes */
-#define MAPPYDOT_GPIO_HIGH                                  0x6f
 #define MAPPYDOT_GPIO_LOW                                   0x66
-#define MAPPYDOT_GPIO_MEASUREMENT_INTERRUPT                 0x6d
+#define MAPPYDOT_GPIO_MEASUREMENT_INTERRUPT                 0x6D
+#define MAPPYDOT_GPIO_HIGH                                  0x6F
 #define MAPPYDOT_GPIO_PWM_ENABLED                           0x70
 #define MAPPYDOT_GPIO_THRESHOLD_ENABLED                     0x74
 
@@ -151,8 +122,8 @@
 #define MAPPYDOT_REBOOT_TO_BOOTLOADER                       0x01
 
 /* Device limits */
-#define MAPPYDOT_MIN_DISTANCE                               0.20f
-#define MAPPYDOT_MAX_DISTANCE                               4.00f
+#define MAPPYDOT_MIN_DISTANCE                               0.20f // meters
+#define MAPPYDOT_MAX_DISTANCE                               4.00f // meters
 
 #define MAPPYDOT_CONVERSION_INTERVAL                        100000 /* 10ms */
 
@@ -162,110 +133,8 @@
 # error This requires CONFIG_SCHED_WORKQUEUE.
 #endif
 
-class MappyDot : public device::I2C
-{
-public:
-	MappyDot(int bus = MAPPYDOT_BUS_DEFAULT, int address = MAPPYDOT_BASE_ADDR);
-	virtual ~MappyDot();
-
-	/**
-	 * @brief
-	 */
-	virtual int init();
-
-	/**
-	 * @brief
-	 */
-	virtual int ioctl(device::file_t *file_pointer, int cmd, unsigned long arg);
-
-	/**
-	 * Diagnostics - print some basic information about the driver.
-	 */
-	void print_info();
-
-	/**
-	 * @brief
-	 */
-	virtual ssize_t read(device::file_t *file_pointer, char *buffer, size_t buflen);
-
-protected:
-
-private:
-
-	/**
-	 * @brief
-	 */
-	int collect();
-
-	/**
-	 * @brief Perform a poll cycle; collect from the previous measurement
-	 * and start a new one.
-	 */
-	void cycle();
-
-	/**
-	 * Static trampoline from the workq context; because we don't have a
-	 * generic workq wrapper yet.
-	 *
-	 * @param arg        Instance pointer for the driver that is polling.
-	 */
-	static void cycle_trampoline(void *arg);
-
-	/**
-	 * @brief
-	 */
-	int measure();
-
-	/**
-	 * Test whether the device supported by the driver is present at a
-	 * specific address.
-	 *
-	 * @param address    The I2C bus address to probe.
-	 * @return           True if the device is present.
-	 */
-	int probe_address(uint8_t address);
-
-	/**
-	 * Initialise the automatic measurement state machine and start it.
-	 *
-	 * @note This function is called at open and error time.  It might make sense
-	 *       to make it more aggressive about resetting the bus in case of errors.
-	 */
-	void start();
-
-	/**
-	 * @brief Stop the automatic measurement state machine.
-	 */
-	void stop();
-
-	ringbuffer::RingBuffer *_reports{nullptr};
-
-	orb_advert_t _distance_sensor_topic{nullptr};  // Change to _distance_sensor_topic.
-
-	perf_counter_t _comms_errors;
-	perf_counter_t _sample_perf;
-
-	bool _collect_phase{false};
-	bool _sensor_ok{false};
-
-	int _class_instance{-1};
-	int _measure_ticks{0};
-	int _orb_class_instance{-1};
-
-	px4::Array<uint8_t, MB12XX_MAX_RANGEFINDERS> _sensor_addresses;
-
-	work_s _work{};
-};
-
-/**
- * Driver 'main' command.
- */
-extern "C" __EXPORT int mappydot_main(int argc, char *argv[]);
-
 MappyDot::MappyDot(int bus, int address) :
-	I2C("MappyDot", MAPPYDOT_DEVICE_PATH, bus, address, 100000),
-	_sample_perf(perf_alloc(PC_ELAPSED, "mappydot_read")),
-	_comms_errors(perf_alloc(PC_COUNT, "mappydot_com_err"))
+	I2C("MappyDot", MAPPYDOT_DEVICE_PATH, bus, address, 100000)
 {
 }
 
@@ -298,8 +167,8 @@ MappyDot::collect()
 
 	perf_begin(_sample_perf);
 
-	for (unsigned mappy_address = 0; mappy_address < _sensor_addresses.size(); mappy_address++) {
-		set_device_address(_sensor_addresses[mappy_address]);
+	for (size_t index = 0; index < _sensor_addresses.size(); index++) {
+		set_device_address(_sensor_addresses[index]);
 
 		// @TODO - Why is this usleep occurring?
 		usleep(50000);
@@ -735,7 +604,7 @@ start()
 int
 start_bus(int i2c_bus)
 {
-	int fd = -1;
+	int fd = nullptr;
 
 	if (g_dev != nullptr) {
 		PX4_ERR("already started");
@@ -745,11 +614,8 @@ start_bus(int i2c_bus)
 	/* create the driver */
 	g_dev = new Mappydot(i2c_bus);
 
-	if (g_dev == nullptr) {
-		goto fail;
-	}
-
-	if (OK != g_dev->init()) {
+	if (g_dev == nullptr ||
+	    g_dev->init() != OK) {
 		goto fail;
 	}
 
@@ -883,8 +749,11 @@ mappydot_usage()
 	PX4_INFO("\tstart|stop|test|reset|info");
 }
 
-int
-mappydot_main(int argc, char *argv[])
+
+/**
+ * Driver 'main' command.
+ */
+extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 {
 	int ch;
 	int myoptind = 1;

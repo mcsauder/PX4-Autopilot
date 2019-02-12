@@ -33,7 +33,7 @@
 
 
 /**
- * Mappy Dot 0
+ * MappyDot sensor 0
  *
  * @reboot_required true
  * @min 0
@@ -53,11 +53,11 @@
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT0_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT0_ROT, 0);
 
 
 /**
- * Mappy Dot 1
+ * MappyDot sensor 1
  *
  * @reboot_required true
  * @min 0
@@ -79,9 +79,9 @@ PARAM_DEFINE_INT32(SENS_MPYDT0_ROT, 0);
  */
 
 
-PARAM_DEFINE_INT32(SENS_MPYDT1_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT1_ROT, 0);
 /**
- * Mappy Dot 2
+ * MappyDot sensor 2
  *
  * @reboot_required true
  * @min 0
@@ -101,33 +101,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT1_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT2_ROT, 0);
-
-/**
- * Mappy Dot 3
- *
- * @reboot_required true
- * @min 0
- * @max 19
- * @group Sensors
- * @value 0 Disabled (?)
- * @value 8 Address
- * @value 9 Address
- * @value 10 Address
- * @value 11 Address
- * @value 12 Address
- * @value 13 Address
- * @value 14 Address
- * @value 15 Address
- * @value 16 Address
- * @value 17 Address
- * @value 18 Address
- * @value 19 Address
- */
-PARAM_DEFINE_INT32(SENS_MPYDT3_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT2_ROT, 0);
 
 /**
- * Mappy Dot 4
+ * MappyDot sensor 3
  *
  * @reboot_required true
  * @min 0
@@ -147,10 +124,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT3_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT4_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT3_ROT, 0);
 
 /**
- * Mappy Dot 5
+ * MappyDot sensor 4
  *
  * @reboot_required true
  * @min 0
@@ -170,10 +147,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT4_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT5_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT4_ROT, 0);
 
 /**
- * Mappy Dot 6
+ * MappyDot sensor 5
  *
  * @reboot_required true
  * @min 0
@@ -193,10 +170,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT5_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT6_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT5_ROT, 0);
 
 /**
- * Mappy Dot 7
+ * MappyDot sensor 6
  *
  * @reboot_required true
  * @min 0
@@ -216,10 +193,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT6_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT7_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT6_ROT, 0);
 
 /**
- * Mappy Dot 8
+ * MappyDot sensor 7
  *
  * @reboot_required true
  * @min 0
@@ -239,10 +216,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT7_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT8_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT7_ROT, 0);
 
 /**
- * Mappy Dot 9
+ * MappyDot sensor 8
  *
  * @reboot_required true
  * @min 0
@@ -262,10 +239,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT8_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT9_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT8_ROT, 0);
 
 /**
- * Mappy Dot 10
+ * MappyDot sensor 9
  *
  * @reboot_required true
  * @min 0
@@ -285,10 +262,10 @@ PARAM_DEFINE_INT32(SENS_MPYDT9_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT10_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT9_ROT, 0);
 
 /**
- * Mappy Dot 11
+ * MappyDot sensor 10
  *
  * @reboot_required true
  * @min 0
@@ -308,4 +285,27 @@ PARAM_DEFINE_INT32(SENS_MPYDT10_ROT, 0);
  * @value 18 Address
  * @value 19 Address
  */
-PARAM_DEFINE_INT32(SENS_MPYDT11_ROT, 0);
+PARAM_DEFINE_INT32(SENS_MPDT10_ROT, 0);
+
+/**
+ * MappyDot sensor 11
+ *
+ * @reboot_required true
+ * @min 0
+ * @max 19
+ * @group Sensors
+ * @value 0 Disabled (?)
+ * @value 8 Address
+ * @value 9 Address
+ * @value 10 Address
+ * @value 11 Address
+ * @value 12 Address
+ * @value 13 Address
+ * @value 14 Address
+ * @value 15 Address
+ * @value 16 Address
+ * @value 17 Address
+ * @value 18 Address
+ * @value 19 Address
+ */
+PARAM_DEFINE_INT32(SENS_MPDT11_ROT, 0);
