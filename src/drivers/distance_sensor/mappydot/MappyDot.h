@@ -66,9 +66,10 @@
 
 
 /* Configuration Constants */
-#define MAPPYDOT_BUS_DEFAULT                            PX4_I2C_BUS_EXPANSION2
-#define MAPPYDOT_BASE_ADDR                              0x08
-#define MAPPYDOT_DEVICE_PATH                            "/dev/mappydot"
+#define MAPPYDOT_BUS_DEFAULT      PX4_I2C_BUS_EXPANSION2
+#define MAPPYDOT_BASE_ADDR        0x08
+#define MAPPYDOT_DEVICE_PATH      "/dev/mappydot"
+#define MAPPYDOT_MAX_RANGEFINDERS 10
 
 class MappyDot : public device::I2C
 {
@@ -160,7 +161,7 @@ private:
 	int _measure_ticks{0};
 	int _orb_class_instance{-1};
 
-	px4::Array<uint8_t, MB12XX_MAX_RANGEFINDERS> _sensor_addresses {};
+	px4::Array<uint8_t, MAPPYDOT_MAX_RANGEFINDERS> _sensor_addresses {};
 
 	work_s _work{};
 };

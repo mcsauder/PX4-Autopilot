@@ -127,8 +127,6 @@
 
 #define MAPPYDOT_CONVERSION_INTERVAL                        100000 /* 10ms */
 
-#define MAPPYDOT_MAX_RANGEFINDERS                           10
-
 #ifndef CONFIG_SCHED_WORKQUEUE
 # error This requires CONFIG_SCHED_WORKQUEUE.
 #endif
@@ -171,12 +169,12 @@ MappyDot::collect()
 		set_device_address(_sensor_addresses[index]);
 
 		// @TODO - Why is this usleep occurring?
-		usleep(50000);
+		// usleep(50000);
 
 		ret = transfer(nullptr, 0, &val[0], 2);
 
 		if (ret < 0) {
-			PX4_INFO("error reading from sensor: %d", ret);
+			PX4_INFO("error reading from sensor: %d", index);
 			perf_count(_comms_errors);
 			perf_end(_sample_perf);
 			return ret;
@@ -186,15 +184,15 @@ MappyDot::collect()
 
 		struct distance_sensor_s report;
 
-		report.timestamp = hrt_absolute_time();
-		report.type = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;  //INFRARED DIDNT WORK WITH MAVROS?
+		report.covariance       = 0;
 		report.current_distance = distance_mm / 10;
-		report.min_distance = MAPPYDOT_MIN_DISTANCE;
-		report.max_distance = MAPPYDOT_MAX_DISTANCE;
-		report.covariance = 0;
-		report.signal_quality = 0;
-		report.orientation = 0;
-		report.id = get_device_address(); // used to be 0
+		report.id               = get_device_address(); // used to be 0
+		report.max_distance     = MAPPYDOT_MAX_DISTANCE;
+		report.min_distance     = MAPPYDOT_MIN_DISTANCE;
+		report.orientation      = 0;
+		report.signal_quality   = 0;
+		report.timestamp        = hrt_absolute_time();
+		report.type             = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;  //INFRARED DIDNT WORK WITH MAVROS?
 
 		// Publish it, if we are the primary.
 		if (_distance_sensor_topic != nullptr) {
@@ -208,7 +206,7 @@ MappyDot::collect()
 	}
 
 	perf_end(_sample_perf);
-	return OK;
+	return PX4_OK;
 }
 
 void
@@ -217,7 +215,7 @@ MappyDot::cycle()
 	if (_collect_phase) {
 
 		// Perform collection.
-		if (OK != collect()) {
+		if (collect() != OK) {
 			PX4_INFO("collection error");
 			// If error restart the measurement state machine.
 			start();
@@ -240,7 +238,7 @@ MappyDot::cycle()
 	_collect_phase = true;
 
 	// Schedule a fresh cycle call when we are ready to measure again.
-	work_queue(HPWORK, &_work, (worker_t) & MappyDot::cycle_trampoline, this,
+	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this,
 		   _measure_ticks - USEC2TICK(MAPPYDOT_CONVERSION_INTERVAL));
 
 }
@@ -282,9 +280,10 @@ MappyDot::init()
 	}
 
 	// XXX we should find out why we need to wait 200 ms here
-	usleep(200000);
+	// usleep(200000);
 
 	uint8_t sensor_address = MAPPYDOT_BASE_ADDR;
+	size_t sensor_count = 0;
 
 	// Check for connected rangefinders on each i2c port,
 	// starting from the base address 0x08 and counting upwards
@@ -294,20 +293,17 @@ MappyDot::init()
 
 		// Check if sensor is present and store I2C address.
 		if (measure() == 0) {
-			PX4_INFO("added mappydot sensor ", i);
+			PX4_INFO("MappyDot %d with address %d added", i, sensor_address);
 			_sensor_addresses[i] = sensor_address;
+			sensor_count++;
 		}
 	}
 
-	PX4_INFO("Total MappyDots connected: %d", _sensor_addresses.size());
-
-	for (unsigned add_counter = 0; add_counter < _sensor_addresses.size(); add_counter++) {
-		PX4_INFO("MappyDot %d with address %d added", add_counter, _sensor_addresses[add_counter]);
-	}
+	PX4_INFO("Total MappyDots connected: %d", sensor_count);
 
 	set_device_address(MAPPYDOT_BASE_ADDR);
 	_sensor_ok = true;
-	return OK;
+	return PX4_OK;
 }
 
 int
@@ -318,21 +314,11 @@ MappyDot::ioctl(device::file_t *file_pointer, int cmd, unsigned long arg)
 	case SENSORIOCSPOLLRATE: {
 			switch (arg) {
 
-			// Switching to manual polling.
-			case SENSOR_POLLRATE_MANUAL:
-				stop();
-				_measure_ticks = 0;
-				return OK;
-
-			// External signalling (DRDY) not supported.
-			case SENSOR_POLLRATE_EXTERNAL:
-
 			// Zero would be bad.
 			case 0:
 				return -EINVAL;
 
-			// Set default/max polling rate.
-			case SENSOR_POLLRATE_MAX:
+			// Set max polling rate.
 			case SENSOR_POLLRATE_DEFAULT: {
 					// Do we need to start internal polling?.
 					bool want_start = (_measure_ticks == 0);
@@ -346,7 +332,7 @@ MappyDot::ioctl(device::file_t *file_pointer, int cmd, unsigned long arg)
 
 					}
 
-					return OK;
+					return PX4_OK;
 				}
 
 			// Adjust to a legal polling interval in Hz.
@@ -370,34 +356,9 @@ MappyDot::ioctl(device::file_t *file_pointer, int cmd, unsigned long arg)
 						start();
 					}
 
-					return OK;
+					return PX4_OK;
 				}
 			}
-		}
-
-	case SENSORIOCGPOLLRATE:
-		if (_measure_ticks == 0) {
-			return SENSOR_POLLRATE_MANUAL;
-		}
-
-		return (1000 / _measure_ticks);
-
-	case SENSORIOCSQUEUEDEPTH: {
-			// Lower bound is mandatory, upper bound is a sanity check.
-			if ((arg < 1) || (arg > 100)) {
-				return -EINVAL;
-			}
-
-			ATOMIC_ENTER;
-
-			if (!_reports->resize(arg)) {
-				ATOMIC_LEAVE;
-				return -ENOMEM;
-			}
-
-			ATOMIC_LEAVE;
-
-			return OK;
 		}
 
 	case SENSORIOCRESET:
@@ -422,7 +383,7 @@ MappyDot::measure()
 		return ret;
 	}
 
-	return OK;
+	return PX4_OK;
 }
 
 void
@@ -541,7 +502,7 @@ info()
 	printf("state @ %p\n", g_dev);
 	g_dev->print_info();
 
-	return OK;
+	return PX4_OK;
 }
 
 /**
@@ -568,7 +529,7 @@ reset()
 	}
 
 	px4_close(fd);
-	return OK;
+	return PX4_OK;
 }
 
 /**
@@ -586,9 +547,9 @@ start()
 		return PX4_ERROR;
 	}
 
-	for (unsigned i = 0; i < NUM_I2C_BUS_OPTIONS; i++) {
+	for (size_t i = 0; i < NUM_I2C_BUS_OPTIONS; i++) {
 		if (start_bus(i2c_bus_options[i]) == OK) {
-			return OK;
+			return PX4_OK;
 		}
 	}
 
@@ -604,7 +565,7 @@ start()
 int
 start_bus(int i2c_bus)
 {
-	int fd = nullptr;
+	int fd = -1;
 
 	if (g_dev != nullptr) {
 		PX4_ERR("already started");
@@ -612,7 +573,7 @@ start_bus(int i2c_bus)
 	}
 
 	/* create the driver */
-	g_dev = new Mappydot(i2c_bus);
+	g_dev = new MappyDot(i2c_bus);
 
 	if (g_dev == nullptr ||
 	    g_dev->init() != OK) {
@@ -631,7 +592,7 @@ start_bus(int i2c_bus)
 	}
 
 	px4_close(fd);
-	return OK;
+	return PX4_OK;
 
 fail:
 
@@ -662,7 +623,7 @@ stop()
 		return PX4_ERROR;
 	}
 
-	return OK;
+	return PX4_OK;
 }
 
 /**
@@ -701,7 +662,7 @@ test()
 	}
 
 	// Read the sensor 5x and report each value.
-	for (unsigned i = 0; i < 5; i++) {
+	for (size_t i = 0; i < 5; i++) {
 		struct pollfd fds;
 
 		// Wait for data to be ready.
@@ -732,7 +693,7 @@ test()
 	}
 
 	PX4_INFO("PASS");
-	return OK;
+	return PX4_OK;
 }
 
 } // namespace mappydot
