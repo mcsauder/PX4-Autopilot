@@ -33,6 +33,18 @@
 
 
 /**
+ * MappyDot Rangefinder (i2c)
+ *
+ * @reboot_required true
+ * @min 0
+ * @max 1
+ * @group Sensors
+ * @value 0 Disabled
+ * @value 1 Autodetect
+ */
+PARAM_DEFINE_INT32(SENS_EN_MPDT, 0);
+
+/**
  * MappyDot sensor 0
  *
  * @reboot_required true

@@ -125,15 +125,17 @@
 #define MAPPYDOT_MIN_DISTANCE                               0.20f // meters
 #define MAPPYDOT_MAX_DISTANCE                               4.00f // meters
 
-#define MAPPYDOT_CONVERSION_INTERVAL                        100000 /* 10ms */
+#define MAPPYDOT_MEASUREMENT_INTERVAL                        100000 /* 10ms */
 
 #ifndef CONFIG_SCHED_WORKQUEUE
 # error This requires CONFIG_SCHED_WORKQUEUE.
 #endif
 
 MappyDot::MappyDot(int bus, int address) :
-	I2C("MappyDot", MAPPYDOT_DEVICE_PATH, bus, address, 100000)
+	I2C("MappyDot", MAPPYDOT_DEVICE_PATH, bus, address, MAPPYDOT_MEASUREMENT_INTERVAL),
+	ModuleParams(nullptr)
 {
+	_param_sub = orb_subscribe(ORB_ID(parameter_update));
 }
 
 MappyDot::~MappyDot()
@@ -149,6 +151,9 @@ MappyDot::~MappyDot()
 	if (_class_instance != -1) {
 		unregister_class_devname(RANGE_FINDER_BASE_DEVICE_PATH, _class_instance);
 	}
+
+	// Unsubscribe from uORB topics.
+	orb_unsubscribe(_param_sub);
 
 	// Free perf counters.
 	perf_free(_comms_errors);
@@ -192,7 +197,7 @@ MappyDot::collect()
 		report.orientation      = 0;
 		report.signal_quality   = 0;
 		report.timestamp        = hrt_absolute_time();
-		report.type             = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;  //INFRARED DIDNT WORK WITH MAVROS?
+		report.type             = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
 
 		// Publish it, if we are the primary.
 		if (_distance_sensor_topic != nullptr) {
@@ -212,39 +217,21 @@ MappyDot::collect()
 void
 MappyDot::cycle()
 {
-	if (_collect_phase) {
-
-		// Perform collection.
-		if (collect() != OK) {
-			PX4_INFO("collection error");
-			// If error restart the measurement state machine.
-			start();
-			return;
-		}
-
-		// Next phase is measurement.
-		_collect_phase = false;
-
-		if (_measure_ticks > USEC2TICK(MAPPYDOT_CONVERSION_INTERVAL)) {
-
-			// Schedule a fresh cycle call when we are ready to measure again.
-			work_queue(HPWORK, &_work, (worker_t) & MappyDot::cycle_trampoline, this,
-				   _measure_ticks - USEC2TICK(MAPPYDOT_CONVERSION_INTERVAL));
-			return;
-		}
+	// Perform collection.
+	if (collect() != PX4_OK) {
+		PX4_INFO("sensor measurement collection error");
+		// If error restart the measurement state machine.
+		start();
+		return;
 	}
-
-	// Next phase is collection.
-	_collect_phase = true;
 
 	// Schedule a fresh cycle call when we are ready to measure again.
 	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this,
-		   _measure_ticks - USEC2TICK(MAPPYDOT_CONVERSION_INTERVAL));
-
+		   USEC2TICK(MAPPYDOT_MEASUREMENT_INTERVAL));
 }
 
 void
-MappyDot::cycle_trampoline(void *arg)
+MappyDot::cycle_trampoline(const void *arg)
 {
 	MappyDot *dev = (MappyDot *)arg;
 
@@ -254,14 +241,19 @@ MappyDot::cycle_trampoline(void *arg)
 int
 MappyDot::init()
 {
+	int sensor_enabled = _p_sensor_enabled.get();
+
+	if (sensor_enabled == 0) {
+		PX4_WARN("Disabled");
+		return PX4_ERROR;
+	}
+
 	if (I2C::init() != OK) {
 		return PX4_ERROR;
 	}
 
 	// Allocate basic report buffers.
 	_reports = new ringbuffer::RingBuffer(2, sizeof(distance_sensor_s));
-
-	set_device_address(MAPPYDOT_BASE_ADDR);
 
 	if (_reports == nullptr) {
 		return PX4_ERROR;
@@ -272,43 +264,47 @@ MappyDot::init()
 	// Get a publish handle on the obstacle distance topic.
 	struct distance_sensor_s distance_sensor_report = {};
 
+	_reports->get(&distance_sensor_report);
+
 	_distance_sensor_topic = orb_advertise_multi(ORB_ID(distance_sensor), &distance_sensor_report,
 				 &_orb_class_instance, ORB_PRIO_LOW);
 
 	if (_distance_sensor_topic == nullptr) {
 		PX4_ERR("failed to create distance_sensor object");
+		return PX4_ERROR;
 	}
-
-	// XXX we should find out why we need to wait 200 ms here
-	// usleep(200000);
 
 	uint8_t sensor_address = MAPPYDOT_BASE_ADDR;
 	size_t sensor_count = 0;
 
 	// Check for connected rangefinders on each i2c port,
-	// starting from the base address 0x08 and counting upwards
-	for (size_t i = 0; i <= MAPPYDOT_MAX_RANGEFINDERS; i++) {
-		sensor_address = MAPPYDOT_BASE_ADDR + i;
+	// starting from the base address 0x08 and incrementing.
+	for (size_t i = 0; i <= RANGE_FINDER_MAX_SENSORS; i++) {
 		set_device_address(sensor_address);
 
 		// Check if sensor is present and store I2C address.
 		if (measure() == 0) {
-			PX4_INFO("MappyDot %d with address %d added", i, sensor_address);
 			_sensor_addresses[i] = sensor_address;
+			sensor_address++;
 			sensor_count++;
+			PX4_INFO("sensor %d at address %d added", i, _sensor_addresses[i]);
+
+		} else {
+			break;
 		}
 	}
 
-	PX4_INFO("Total MappyDots connected: %d", sensor_count);
+	PX4_INFO("%d sensors connected", sensor_count);
 
-	set_device_address(MAPPYDOT_BASE_ADDR);
 	_sensor_ok = true;
 	return PX4_OK;
 }
 
 int
-MappyDot::ioctl(device::file_t *file_pointer, int cmd, unsigned long arg)
+MappyDot::ioctl(device::file_t *file_pointer, const int cmd, const unsigned long arg)
 {
+	bool should_start = (_measure_ticks == 0);
+
 	switch (cmd) {
 
 	case SENSORIOCSPOLLRATE: {
@@ -320,16 +316,12 @@ MappyDot::ioctl(device::file_t *file_pointer, int cmd, unsigned long arg)
 
 			// Set max polling rate.
 			case SENSOR_POLLRATE_DEFAULT: {
-					// Do we need to start internal polling?.
-					bool want_start = (_measure_ticks == 0);
-
 					// Set interval for next measurement to minimum legal value.
-					_measure_ticks = USEC2TICK(MAPPYDOT_CONVERSION_INTERVAL);
+					_measure_ticks = USEC2TICK(MAPPYDOT_MEASUREMENT_INTERVAL);
 
-					// If we need to start the poll state machine, do it.
-					if (want_start) {
+					// Start the poll state machine.
+					if (should_start) {
 						start();
-
 					}
 
 					return PX4_OK;
@@ -337,22 +329,20 @@ MappyDot::ioctl(device::file_t *file_pointer, int cmd, unsigned long arg)
 
 			// Adjust to a legal polling interval in Hz.
 			default: {
-					// Do we need to start internal polling?
-					bool want_start = (_measure_ticks == 0);
-
 					// Convert hz to tick interval via microseconds.
 					int ticks = USEC2TICK(1000000 / arg);
 
 					// Check against maximum rate.
-					if (ticks < USEC2TICK(MAPPYDOT_CONVERSION_INTERVAL)) {
+					if (ticks < USEC2TICK(MAPPYDOT_MEASUREMENT_INTERVAL)) {
 						return -EINVAL;
+
+					} else {
+						// Update interval for next measurement.
+						_measure_ticks = ticks;
 					}
 
-					// Update interval for next measurement.
-					_measure_ticks = ticks;
-
-					// If we need to start the poll state machine, do it.
-					if (want_start) {
+					// Start the poll state machine.
+					if (should_start) {
 						start();
 					}
 
@@ -379,7 +369,7 @@ MappyDot::measure()
 
 	if (ret != OK) {
 		perf_count(_comms_errors);
-		PX4_INFO("i2c::transfer returned %d", ret);
+		PX4_DEBUG("i2c::transfer returned %d", ret);
 		return ret;
 	}
 
@@ -396,13 +386,11 @@ MappyDot::print_info()
 }
 
 ssize_t
-MappyDot::read(device::file_t *file_pointer, char *buffer, size_t buflen)
+MappyDot::read(const device::file_t *file_pointer, char *buffer, const size_t buffer_length)
 {
-	int ret = 0;
-
-	unsigned int count = buflen / sizeof(struct distance_sensor_s);
-
-	struct distance_sensor_s *rbuf = reinterpret_cast<struct distance_sensor_s *>(buffer);
+	size_t buffer_size = 0;
+	unsigned int count = buffer_length / sizeof(struct distance_sensor_s);
+	struct distance_sensor_s *read_buffer = reinterpret_cast<struct distance_sensor_s *>(buffer);
 
 	// Buffer must be large enough.
 	if (count < 1) {
@@ -418,60 +406,89 @@ MappyDot::read(device::file_t *file_pointer, char *buffer, size_t buflen)
 		 * we are careful to avoid racing with them.
 		 */
 		while (count--) {
-			if (_reports->get(rbuf)) {
-				ret += sizeof(*rbuf);
-				rbuf++;
+			if (_reports->get(read_buffer)) {
+				buffer_size += sizeof(*read_buffer);
+				read_buffer++;
 			}
 		}
 
 		// If there was no data, warn the caller.
-		return ret ? ret : -EAGAIN;
+		if (buffer_size == 0) {
+			return -EAGAIN;
+		}
 	}
 
 	// Manual measurement - run one conversion.
-	do {
-		_reports->flush();
+	_reports->flush();
 
-		// Trigger a measurement.
-		if (OK != measure()) {
-			ret = -EIO;
-			break;
-		}
+	// Trigger a measurement.
+	if (measure() != PX4_OK) {
+		return -EIO;
+	}
 
-		// Wait for it to complete.
-		usleep(MAPPYDOT_CONVERSION_INTERVAL * 2);
+	// Wait for it to complete.
+	usleep(MAPPYDOT_MEASUREMENT_INTERVAL);
 
-		// Run the collection phase.
-		if (collect() != OK) {
-			ret = -EIO;
-			break;
-		}
+	// Run the collection phase.
+	if (collect() != PX4_OK) {
+		return -EIO;
+	}
 
-		// State machine will have generated a report, copy it out.
-		if (_reports->get(rbuf)) {
-			ret = sizeof(*rbuf);
-		}
-	} while (0);
+	// State machine will have generated a report, copy it out.
+	if (_reports->get(read_buffer)) {
+		buffer_size = sizeof(*read_buffer);
+	}
 
-	return ret;
+	return buffer_size;
 }
 
-void
+int
 MappyDot::start()
 {
 	// Reset the report ring and state machine.
-	_collect_phase = false;
 	_reports->flush();
 
 	// Schedule a cycle to start things.
-	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this, 1); // Last var in work_queue was 5, not 1.
+	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this, 0);
+
+
+	if (_is_running) {
+		PX4_INFO("Driver already running.");
+		return PX4_OK;
+	}
+
+	update_params(true);
+
+	// Kick off the cycling. We can call it directly because we're already in the work queue context
+	cycle();
+
+	PX4_INFO("Driver started successfully.");
+
+	return PX4_OK;
+}
+
+int
+MappyDot::stop()
+{
+	_is_running = false;
+	work_cancel(HPWORK, &_work);
+	return PX4_OK;
 }
 
 void
-MappyDot::stop()
+MappyDot::update_params(const bool force)
 {
-	work_cancel(HPWORK, &_work);
+	bool updated;
+	parameter_update_s param_update;
+
+	orb_check(_param_sub, &updated);
+
+	if (updated || force) {
+		ModuleParams::updateParams();
+		orb_copy(ORB_ID(parameter_update), _param_sub, &param_update);
+	}
 }
+
 
 /**
  * Local functions in support of the shell command.
@@ -495,7 +512,7 @@ int
 info()
 {
 	if (g_dev == nullptr) {
-		PX4_ERR("driver not running");
+		PX4_INFO("driver not running");
 		return PX4_ERROR;
 	}
 
@@ -704,10 +721,10 @@ mappydot_usage()
 {
 	PX4_INFO("Usage: mappydot <command> [options]");
 	PX4_INFO("options:");
-	PX4_INFO("\t-b --bus i2cbus (%d)", MAPPYDOT_BUS_DEFAULT);
 	PX4_INFO("\t-a --all");
+	PX4_INFO("\t-b --bus i2cbus (%d)", MAPPYDOT_BUS_DEFAULT);
 	PX4_INFO("command:");
-	PX4_INFO("\tstart|stop|test|reset|info");
+	PX4_INFO("\tinfo|reset|start|status|stop|test");
 }
 
 
@@ -725,31 +742,35 @@ extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 
 	while ((ch = px4_getopt(argc, argv, "ab:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
-		case 'b':
-			i2c_bus = atoi(myoptarg);
-			//PX4_INFO("Specific I2C Bus started: %d", i2c_bus);
-			break;
-
 		case 'a':
 			start_all = true;
 			break;
 
+		case 'b':
+			i2c_bus = atoi(myoptarg);
+			PX4_INFO("Specific I2C Bus started: %d", i2c_bus);
+			break;
+
 		default:
 			PX4_WARN("Unknown option!");
-			goto out_error;
+			mappydot_usage();
+			return PX4_ERROR;
 		}
 	}
 
 	if (myoptind >= argc) {
-		goto out_error;
+		mappydot_usage();
+		return PX4_ERROR;
 	}
 
-	// Start/load the driver.
-	PX4_INFO("Starting Driver now");
+	// Reset the driver.
+	if (!strcmp(argv[myoptind], "reset")) {
+		return mappydot::reset();
+	}
 
 	if (!strcmp(argv[myoptind], "start")) {
 		if (start_all) {
-			PX4_INFO("Starting regular");
+			PX4_INFO("Starting driver");
 			return mappydot::start();
 
 		} else {
@@ -757,8 +778,6 @@ extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 			return mappydot::start_bus(i2c_bus);
 		}
 	}
-
-	PX4_INFO("Started Driver");
 
 	// Stop the driver.
 	if (!strcmp(argv[myoptind], "stop")) {
@@ -770,17 +789,13 @@ extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 		return mappydot::test();
 	}
 
-	// Reset the driver.
-	if (!strcmp(argv[myoptind], "reset")) {
-		return mappydot::reset();
-	}
-
 	// Print driver information.
-	if (!strcmp(argv[myoptind], "info") || !strcmp(argv[myoptind], "status")) {
+	if (!strcmp(argv[myoptind], "help") ||
+	    !strcmp(argv[myoptind], "info") ||
+	    !strcmp(argv[myoptind], "status")) {
 		return mappydot::info();
 	}
 
-out_error:
 	mappydot_usage();
 	return PX4_ERROR;
 }

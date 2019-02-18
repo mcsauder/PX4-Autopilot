@@ -55,23 +55,24 @@
 #include <drivers/device/ringbuffer.h>
 #include <drivers/drv_hrt.h>
 #include <drivers/drv_range_finder.h>
-#include <px4_config.h>
-#include <px4_getopt.h>
-#include <px4_workqueue.h>
 #include <parameters/param.h>
 #include <perf/perf_counter.h>
+#include <px4_config.h>
+#include <px4_getopt.h>
+#include <px4_module_params.h>
+#include <px4_workqueue.h>
+#include <sys/types.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/distance_sensor.h>
-#include <sys/types.h>
+#include <uORB/topics/parameter_update.h>
 
 
 /* Configuration Constants */
-#define MAPPYDOT_BUS_DEFAULT      PX4_I2C_BUS_EXPANSION2
 #define MAPPYDOT_BASE_ADDR        0x08
+#define MAPPYDOT_BUS_DEFAULT      PX4_I2C_BUS_EXPANSION2
 #define MAPPYDOT_DEVICE_PATH      "/dev/mappydot"
-#define MAPPYDOT_MAX_RANGEFINDERS 10
 
-class MappyDot : public device::I2C
+class MappyDot : public device::I2C, public ModuleParams
 {
 public:
 	MappyDot(int bus = MAPPYDOT_BUS_DEFAULT, int address = MAPPYDOT_BASE_ADDR);
@@ -85,7 +86,7 @@ public:
 	/**
 	 * @brief
 	 */
-	virtual int ioctl(device::file_t *file_pointer, int cmd, unsigned long arg);
+	virtual int ioctl(device::file_t *file_pointer, const int cmd, const unsigned long arg);
 
 	/**
 	 * Diagnostics - print some basic information about the driver.
@@ -95,7 +96,7 @@ public:
 	/**
 	 * @brief
 	 */
-	virtual ssize_t read(device::file_t *file_pointer, char *buffer, size_t buflen);
+	virtual ssize_t read(const device::file_t *file_pointer, char *buffer, const size_t buflen);
 
 protected:
 
@@ -116,9 +117,9 @@ private:
 	 * Static trampoline from the workq context; because we don't have a
 	 * generic workq wrapper yet.
 	 *
-	 * @param arg        Instance pointer for the driver that is polling.
+	 * @param arg Instance pointer for the driver that is polling.
 	 */
-	static void cycle_trampoline(void *arg);
+	static void cycle_trampoline(const void *arg);
 
 	/**
 	 * @brief
@@ -132,7 +133,7 @@ private:
 	 * @param address    The I2C bus address to probe.
 	 * @return           True if the device is present.
 	 */
-	int probe_address(uint8_t address);
+	int probe_address(const uint8_t address);
 
 	/**
 	 * Initialise the automatic measurement state machine and start it.
@@ -140,28 +141,39 @@ private:
 	 * @note This function is called at open and error time.  It might make sense
 	 *       to make it more aggressive about resetting the bus in case of errors.
 	 */
-	void start();
+	int start();
 
 	/**
 	 * @brief Stop the automatic measurement state machine.
 	 */
-	void stop();
+	int stop();
+
+	/**
+	 * @brief Updates and checks for updated uORB parameters.
+	 * @param force Boolean to determine if an update check should be forced.
+	 */
+	void update_params(const bool force = false);
 
 	ringbuffer::RingBuffer *_reports{nullptr};
 
 	orb_advert_t _distance_sensor_topic{nullptr};  // Change to _distance_sensor_topic.
 
-	perf_counter_t _comms_errors{perf_alloc(PC_ELAPSED, "mappydot_read")};
-	perf_counter_t _sample_perf{perf_alloc(PC_COUNT, "mappydot_com_err")};
+	perf_counter_t _comms_errors{perf_alloc(PC_ELAPSED, "mappydot_com_err")};
+	perf_counter_t _sample_perf{perf_alloc(PC_COUNT, "mappydot_read")};
 
-	bool _collect_phase{false};
+	bool _is_running{false};
 	bool _sensor_ok{false};
 
 	int _class_instance{-1};
 	int _measure_ticks{0};
 	int _orb_class_instance{-1};
+	int _param_sub{0};
 
-	px4::Array<uint8_t, MAPPYDOT_MAX_RANGEFINDERS> _sensor_addresses {};
+	px4::Array<uint8_t, RANGE_FINDER_MAX_SENSORS> _sensor_addresses {};
 
 	work_s _work{};
+
+	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::SENS_EN_MPDT>) _p_sensor_enabled
+	);
 };
