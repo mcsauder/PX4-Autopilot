@@ -125,14 +125,15 @@
 #define MAPPYDOT_MIN_DISTANCE                               0.20f // meters
 #define MAPPYDOT_MAX_DISTANCE                               4.00f // meters
 
-#define MAPPYDOT_MEASUREMENT_INTERVAL                        100000 /* 10ms */
+#define MAPPYDOT_MEASUREMENT_INTERVAL                       10000 // 10ms
+#define MAPPYDOT_BUS_CLOCK                                  100000 // 100kHz bus speed
 
 #ifndef CONFIG_SCHED_WORKQUEUE
 # error This requires CONFIG_SCHED_WORKQUEUE.
 #endif
 
 MappyDot::MappyDot(int bus, int address) :
-	I2C("MappyDot", MAPPYDOT_DEVICE_PATH, bus, address, MAPPYDOT_MEASUREMENT_INTERVAL),
+	I2C("MappyDot", MAPPYDOT_DEVICE_PATH, bus, address, MAPPYDOT_BUS_CLOCK),
 	ModuleParams(nullptr)
 {
 	_param_sub = orb_subscribe(ORB_ID(parameter_update));
@@ -173,9 +174,6 @@ MappyDot::collect()
 	for (size_t index = 0; index < _sensor_addresses.size(); index++) {
 		set_device_address(_sensor_addresses[index]);
 
-		// @TODO - Why is this usleep occurring?
-		// usleep(50000);
-
 		ret = transfer(nullptr, 0, &val[0], 2);
 
 		if (ret < 0) {
@@ -191,7 +189,7 @@ MappyDot::collect()
 
 		report.covariance       = 0;
 		report.current_distance = distance_mm / 10;
-		report.id               = get_device_address(); // used to be 0
+		report.id               = get_device_address();
 		report.max_distance     = MAPPYDOT_MAX_DISTANCE;
 		report.min_distance     = MAPPYDOT_MIN_DISTANCE;
 		report.orientation      = 0;
@@ -233,9 +231,8 @@ MappyDot::cycle()
 void
 MappyDot::cycle_trampoline(const void *arg)
 {
-	MappyDot *dev = (MappyDot *)arg;
-
-	dev->cycle();
+	MappyDot *mappy_dot = (MappyDot *)arg;
+	mappy_dot->cycle();
 }
 
 int
@@ -287,7 +284,7 @@ MappyDot::init()
 			_sensor_addresses[i] = sensor_address;
 			sensor_address++;
 			sensor_count++;
-			PX4_INFO("sensor %d at address %d added", i, _sensor_addresses[i]);
+			PX4_INFO("sensor %d at address 0x%02X added", i, _sensor_addresses[i]);
 
 		} else {
 			break;
@@ -453,7 +450,7 @@ MappyDot::start()
 
 
 	if (_is_running) {
-		PX4_INFO("Driver already running.");
+		PX4_INFO("driver already running.");
 		return PX4_OK;
 	}
 
@@ -462,7 +459,7 @@ MappyDot::start()
 	// Kick off the cycling. We can call it directly because we're already in the work queue context
 	cycle();
 
-	PX4_INFO("Driver started successfully.");
+	PX4_INFO("driver started successfully.");
 
 	return PX4_OK;
 }
@@ -516,7 +513,7 @@ info()
 		return PX4_ERROR;
 	}
 
-	printf("state @ %p\n", g_dev);
+	PX4_INFO("state @ %p\n", g_dev);
 	g_dev->print_info();
 
 	return PX4_OK;
@@ -531,7 +528,7 @@ reset()
 	int fd = px4_open(MAPPYDOT_DEVICE_PATH, O_RDONLY);
 
 	if (fd < 0) {
-		PX4_ERR("failed");
+		PX4_ERR("driver open failed");
 		return PX4_ERROR;
 	}
 
@@ -589,40 +586,44 @@ start_bus(int i2c_bus)
 		return PX4_ERROR;
 	}
 
-	/* create the driver */
+	// Create the driver.
 	g_dev = new MappyDot(i2c_bus);
 
-	if (g_dev == nullptr ||
-	    g_dev->init() != OK) {
-		goto fail;
+	if (g_dev == nullptr) {
+		delete g_dev;
+		return PX4_ERROR;
 	}
 
-	/* set the poll rate to default, starts automatic data collection */
+	if (g_dev->init() != OK) {
+		delete g_dev;
+		g_dev = nullptr;
+		return PX4_ERROR;
+	}
+
+	// Set the poll rate to default, starts automatic data collection.
 	fd = px4_open(MAPPYDOT_DEVICE_PATH, O_RDONLY);
 
 	if (fd < 0) {
-		goto fail;
+		if (g_dev != nullptr) {
+			delete g_dev;
+			g_dev = nullptr;
+		}
+
+		return PX4_ERROR;
 	}
 
 	if (ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0) {
-		goto fail;
+
+		if (g_dev != nullptr) {
+			delete g_dev;
+			g_dev = nullptr;
+		}
+
+		return PX4_ERROR;
 	}
 
 	px4_close(fd);
 	return PX4_OK;
-
-fail:
-
-	if (fd >= 0) {
-		px4_close(fd);
-	}
-
-	if (g_dev != nullptr) {
-		delete g_dev;
-		g_dev = nullptr;
-	}
-
-	return PX4_ERROR;
 }
 
 /**
@@ -740,7 +741,7 @@ extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 
 	int i2c_bus = MAPPYDOT_BUS_DEFAULT;
 
-	while ((ch = px4_getopt(argc, argv, "ab:", &myoptind, &myoptarg)) != EOF) {
+	while ((ch = px4_getopt(argc, argv, "b:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
 		case 'a':
 			start_all = true;
@@ -748,7 +749,7 @@ extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 
 		case 'b':
 			i2c_bus = atoi(myoptarg);
-			PX4_INFO("Specific I2C Bus started: %d", i2c_bus);
+			PX4_INFO("Specific I2C Bus selected: %d", i2c_bus);
 			break;
 
 		default:
@@ -770,11 +771,11 @@ extern "C" __EXPORT int mappydot_main(int argc, char *argv[])
 
 	if (!strcmp(argv[myoptind], "start")) {
 		if (start_all) {
-			PX4_INFO("Starting driver");
+			PX4_INFO("starting driver");
 			return mappydot::start();
 
 		} else {
-			PX4_INFO("Starting specific bus type %d", i2c_bus);
+			PX4_INFO("starting driver on I2C Bus %d", i2c_bus);
 			return mappydot::start_bus(i2c_bus);
 		}
 	}
