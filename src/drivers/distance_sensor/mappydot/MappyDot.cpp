@@ -168,45 +168,40 @@ MappyDot::collect()
 
 	// Read from the sensor.
 	uint8_t val[2] = {0, 0};
-
 	perf_begin(_sample_perf);
 
-	for (size_t index = 0; index < _sensor_count; index++) {
-		set_device_address(_sensor_addresses[index]);
+	ret = transfer(nullptr, 0, &val[0], 2);
 
-		ret = transfer(nullptr, 0, &val[0], 2);
-
-		if (ret < 0) {
-			PX4_INFO("error reading from sensor: %d, address: 0x%02X", index, get_device_address());
-			perf_count(_comms_errors);
-			perf_end(_sample_perf);
-			return ret;
-		}
-
-		uint16_t distance_mm = val[0] << 8 | val[1];
-
-		struct distance_sensor_s report;
-
-		report.covariance       = 0;
-		report.current_distance = distance_mm / 10;
-		report.id               = get_device_address();
-		report.max_distance     = MAPPYDOT_MAX_DISTANCE;
-		report.min_distance     = MAPPYDOT_MIN_DISTANCE;
-		report.orientation      = 0;
-		report.signal_quality   = 0;
-		report.timestamp        = hrt_absolute_time();
-		report.type             = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
-
-		// Publish it, if we are the primary.
-		if (_distance_sensor_topic != nullptr) {
-			orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &report);
-		}
-
-		_reports->force(&report);
-
-		// Notify anyone waiting for data.
-		poll_notify(POLLIN);
+	if (ret < 0) {
+		PX4_INFO("error reading from sensor: %d, address: 0x%02X", _sensor_index, get_device_address());
+		perf_count(_comms_errors);
+		perf_end(_sample_perf);
+		return ret;
 	}
+
+	uint16_t distance_mm = val[0] << 8 | val[1];
+
+	struct distance_sensor_s report;
+
+	report.covariance       = 0;
+	report.current_distance = distance_mm / 10;
+	report.id               = get_device_address();
+	report.max_distance     = MAPPYDOT_MAX_DISTANCE;
+	report.min_distance     = MAPPYDOT_MIN_DISTANCE;
+	report.orientation      = 0;
+	report.signal_quality   = 0;
+	report.timestamp        = hrt_absolute_time();
+	report.type             = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
+
+	// Publish it, if we are the primary.
+	if (_distance_sensor_topic != nullptr) {
+		orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &report);
+	}
+
+	_reports->force(&report);
+
+	// Notify anyone waiting for data.
+	poll_notify(POLLIN);
 
 	perf_end(_sample_perf);
 	return PX4_OK;
@@ -215,6 +210,10 @@ MappyDot::collect()
 void
 MappyDot::cycle()
 {
+	uint64_t cycle_start = hrt_absolute_time();
+
+	set_device_address(_sensor_addresses[_sensor_index]);
+
 	// Perform collection.
 	if (collect() != PX4_OK) {
 		PX4_INFO("sensor measurement collection error");
@@ -223,9 +222,16 @@ MappyDot::cycle()
 		return;
 	}
 
+	// Increment the sensor being polled.
+	_sensor_index++;
+	_sensor_index %= _sensor_count;
+
+	uint64_t cycle_time = hrt_absolute_time() - cycle_start;
+	uint64_t next_cycle_start = MAPPYDOT_MEASUREMENT_INTERVAL - cycle_time;
+
 	// Schedule a fresh cycle call when we are ready to measure again.
 	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this,
-		   USEC2TICK(MAPPYDOT_MEASUREMENT_INTERVAL));
+		   USEC2TICK(next_cycle_start));
 }
 
 void
@@ -441,25 +447,24 @@ MappyDot::read(const device::file_t *file_pointer, char *buffer, const size_t bu
 int
 MappyDot::start()
 {
-	// Reset the report ring and state machine.
-	_reports->flush();
-
-	// Schedule a cycle to start things.
-	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this, 0);
-
-
 	if (_is_running) {
 		PX4_INFO("driver already running.");
 		return PX4_OK;
 	}
 
+	// Reset the report ring and state machine.
+	_reports->flush();
+
+	// Schedule the first cycle.
+	work_queue(HPWORK, &_work, (worker_t)&MappyDot::cycle_trampoline, this, 0);
+
+	// Update uORB subscription topics.
 	update_params(true);
 
-	// Kick off the cycling. We can call it directly because we're already in the work queue context
+	// We can initiate the cycle directly because we're already in the work queue context.
 	cycle();
 
 	PX4_INFO("driver started successfully.");
-
 	return PX4_OK;
 }
 
@@ -585,7 +590,7 @@ start_bus(int i2c_bus)
 		return PX4_ERROR;
 	}
 
-	// Create the driver.
+	// Instantiate the driver.
 	g_dev = new MappyDot(i2c_bus);
 
 	if (g_dev == nullptr) {
@@ -599,7 +604,7 @@ start_bus(int i2c_bus)
 		return PX4_ERROR;
 	}
 
-	// Set the poll rate to default, starts automatic data collection.
+	// Open the i2c port as read only.
 	fd = px4_open(MAPPYDOT_DEVICE_PATH, O_RDONLY);
 
 	if (fd < 0) {
@@ -611,6 +616,7 @@ start_bus(int i2c_bus)
 		return PX4_ERROR;
 	}
 
+	// Set the poll rate to default, automatic data collection will begin.
 	if (ioctl(fd, SENSORIOCSPOLLRATE, SENSOR_POLLRATE_DEFAULT) < 0) {
 
 		if (g_dev != nullptr) {

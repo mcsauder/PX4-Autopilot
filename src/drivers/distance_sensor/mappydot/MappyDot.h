@@ -170,6 +170,7 @@ private:
 	int _param_sub{0};
 
 	size_t _sensor_count{0};
+	size_t _sensor_index{0};
 
 	px4::Array<uint8_t, RANGE_FINDER_MAX_SENSORS> _sensor_addresses {};
 
