@@ -125,7 +125,7 @@
 #define MAPPYDOT_MIN_DISTANCE                               0.20f // meters
 #define MAPPYDOT_MAX_DISTANCE                               4.00f // meters
 
-#define MAPPYDOT_MEASUREMENT_INTERVAL                       10000 // 10ms
+#define MAPPYDOT_MEASUREMENT_INTERVAL                       10000  // 10ms
 #define MAPPYDOT_BUS_CLOCK                                  100000 // 100kHz bus speed
 
 #ifndef CONFIG_SCHED_WORKQUEUE
@@ -171,13 +171,13 @@ MappyDot::collect()
 
 	perf_begin(_sample_perf);
 
-	for (size_t index = 0; index < _sensor_addresses.size(); index++) {
+	for (size_t index = 0; index < _sensor_count; index++) {
 		set_device_address(_sensor_addresses[index]);
 
 		ret = transfer(nullptr, 0, &val[0], 2);
 
 		if (ret < 0) {
-			PX4_INFO("error reading from sensor: %d", index);
+			PX4_INFO("error reading from sensor: %d, address: 0x%02X", index, get_device_address());
 			perf_count(_comms_errors);
 			perf_end(_sample_perf);
 			return ret;
@@ -241,7 +241,7 @@ MappyDot::init()
 	int sensor_enabled = _p_sensor_enabled.get();
 
 	if (sensor_enabled == 0) {
-		PX4_WARN("Disabled");
+		PX4_WARN("disabled");
 		return PX4_ERROR;
 	}
 
@@ -272,7 +272,6 @@ MappyDot::init()
 	}
 
 	uint8_t sensor_address = MAPPYDOT_BASE_ADDR;
-	size_t sensor_count = 0;
 
 	// Check for connected rangefinders on each i2c port,
 	// starting from the base address 0x08 and incrementing.
@@ -283,7 +282,7 @@ MappyDot::init()
 		if (measure() == 0) {
 			_sensor_addresses[i] = sensor_address;
 			sensor_address++;
-			sensor_count++;
+			_sensor_count++;
 			PX4_INFO("sensor %d at address 0x%02X added", i, _sensor_addresses[i]);
 
 		} else {
@@ -291,7 +290,7 @@ MappyDot::init()
 		}
 	}
 
-	PX4_INFO("%d sensors connected", sensor_count);
+	PX4_INFO("%d sensors connected", _sensor_count);
 
 	_sensor_ok = true;
 	return PX4_OK;

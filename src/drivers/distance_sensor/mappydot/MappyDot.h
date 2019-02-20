@@ -158,8 +158,8 @@ private:
 
 	orb_advert_t _distance_sensor_topic{nullptr};  // Change to _distance_sensor_topic.
 
-	perf_counter_t _comms_errors{perf_alloc(PC_ELAPSED, "mappydot_com_err")};
-	perf_counter_t _sample_perf{perf_alloc(PC_COUNT, "mappydot_read")};
+	perf_counter_t _comms_errors{perf_alloc(PC_ELAPSED, "mappydot_comms_err")};
+	perf_counter_t _sample_perf{perf_alloc(PC_COUNT, "mappydot_sample_perf")};
 
 	bool _is_running{false};
 	bool _sensor_ok{false};
@@ -168,6 +168,8 @@ private:
 	int _measure_ticks{0};
 	int _orb_class_instance{-1};
 	int _param_sub{0};
+
+	size_t _sensor_count{0};
 
 	px4::Array<uint8_t, RANGE_FINDER_MAX_SENSORS> _sensor_addresses {};
 
