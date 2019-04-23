@@ -70,27 +70,25 @@
 #include <board_config.h>
 
 /* Configuration Constants */
-#define TERARANGER_BUS_DEFAULT           PX4_I2C_BUS_EXPANSION
-#define TRONE_BASEADDR      0x30 /* 7-bit address */
-#define TREVO_BASEADDR      0x31 /* 7-bit address */
-#define TERARANGER_DEVICE_PATH   	"/dev/teraranger"
+#define TERARANGER_BUS_DEFAULT		PX4_I2C_BUS_EXPANSION
+#define TRONE_BASEADDR			0x30	/* 7-bit address */
+#define TREVO_BASEADDR			0x31	/* 7-bit address */
+#define TERARANGER_DEVICE_PATH		"/dev/teraranger"
 
 /* TERARANGER Registers addresses */
-
-#define TERARANGER_MEASURE_REG	0x00		/* Measure range register */
-#define TERARANGER_WHO_AM_I_REG  0x01        /* Who am I test register */
-#define TERARANGER_WHO_AM_I_REG_VAL 0xA1
-
+#define TERARANGER_MEASURE_REG		0x00	/* Measure range register */
+#define TERARANGER_WHO_AM_I_REG		0x01	/* Who am I test register */
+#define TERARANGER_WHO_AM_I_REG_VAL	0xA1
 
 /* Device limits */
-#define TRONE_MIN_DISTANCE (0.20f)
-#define TRONE_MAX_DISTANCE (14.00f)
-#define TREVO_60M_MIN_DISTANCE (0.50f)
-#define TREVO_60M_MAX_DISTANCE (60.0f)
-#define TREVO_600HZ_MIN_DISTANCE (0.75f)
-#define TREVO_600HZ_MAX_DISTANCE (8.0f)
+#define TRONE_MIN_DISTANCE		(0.20f)
+#define TRONE_MAX_DISTANCE		(14.00f)
+#define TREVO_60M_MIN_DISTANCE		(0.50f)
+#define TREVO_60M_MAX_DISTANCE		(60.0f)
+#define TREVO_600HZ_MIN_DISTANCE	(0.75f)
+#define TREVO_600HZ_MAX_DISTANCE	(8.0f)
 
-#define TERARANGER_CONVERSION_INTERVAL 50000 /* 50ms */
+#define TERARANGER_CONVERSION_INTERVAL	50000	/* 50ms */
 
 class TERARANGER : public device::I2C, public px4::ScheduledWorkItem
 {
@@ -99,44 +97,47 @@ public:
 		   int bus = TERARANGER_BUS_DEFAULT, int address = TRONE_BASEADDR);
 	virtual ~TERARANGER();
 
-	virtual int 		init() override;
+	virtual int init() override;
 
-	virtual ssize_t		read(device::file_t *filp, char *buffer, size_t buflen) override;
-	virtual int			ioctl(device::file_t *filp, int cmd, unsigned long arg) override;
+	virtual int ioctl(device::file_t *filp, int cmd, unsigned long arg) override;
 
 	/**
 	* Diagnostics - print some basic information about the driver.
 	*/
-	void				print_info();
+	void print_info();
+
+	virtual ssize_t read(device::file_t *filp, char *buffer, size_t buflen) override;
 
 protected:
-	virtual int			probe() override;
+
+	virtual int probe() override;
 
 private:
-	uint8_t _rotation;
-	float				_min_distance;
-	float				_max_distance;
-	ringbuffer::RingBuffer		*_reports;
-	bool				_sensor_ok;
-	uint8_t				_valid;
-	int				_measure_interval;
-	bool				_collect_phase;
-	int				_class_instance;
-	int				_orb_class_instance;
 
-	orb_advert_t		_distance_sensor_topic;
+	/**
+	 * Collects the most recent sensor measurement data from the i2c bus.
+	 */
+	int collect();
 
-	perf_counter_t		_sample_perf;
-	perf_counter_t		_comms_errors;
+	/**
+	 * Sends an i2c measure command to the sensors.
+	 */
+	int measure();
 
 	/**
 	* Test whether the device supported by the driver is present at a
 	* specific address.
 	*
-	* @param address	The I2C bus address to probe.
-	* @return		True if the device is present.
+	* @param address The I2C bus address to probe.
+	* @return True if the device is present.
 	*/
-	int					probe_address(uint8_t address);
+	int probe_address(uint8_t address);
+
+	/**
+	* Perform a poll cycle; collect from the previous measurement
+	* and start a new one.
+	*/
+	void Run() override;
 
 	/**
 	* Initialise the automatic measurement state machine and start it.
@@ -144,31 +145,32 @@ private:
 	* @note This function is called at open and error time.  It might make sense
 	*       to make it more aggressive about resetting the bus in case of errors.
 	*/
-	void				start();
+	void start();
 
 	/**
 	* Stop the automatic measurement state machine.
 	*/
-	void				stop();
+	void stop();
 
-	/**
-	* Set the min and max distance thresholds if you want the end points of the sensors
-	* range to be brought in at all, otherwise it will use the defaults TRONE_MIN_DISTANCE
-	* and TRONE_MAX_DISTANCE
-	*/
-	void				set_minimum_distance(float min);
-	void				set_maximum_distance(float max);
-	float				get_minimum_distance();
-	float				get_maximum_distance();
+	bool _collect_phase{false};
+	bool _sensor_ok{false};
 
-	/**
-	* Perform a poll cycle; collect from the previous measurement
-	* and start a new one.
-	*/
-	void					Run() override;
-	int					measure();
-	int					collect();
+	int _class_instance{-1};
+	int _measure_interval{0};
+	int _orb_class_instance{-1};
 
+	uint8_t _rotation{0};
+	uint8_t _valid{0};
+
+	float _max_distance{TREVO_600HZ_MAX_DISTANCE};
+	float _min_distance{TREVO_600HZ_MIN_DISTANCE};
+
+	orb_advert_t _distance_sensor_topic{nullptr};
+
+	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, "tr1_comm_err")};
+	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, "tr1_read")};
+
+	ringbuffer::RingBuffer *_reports{nullptr};
 };
 
 static const uint8_t crc_table[] = {
@@ -209,27 +211,11 @@ static uint8_t crc8(uint8_t *p, uint8_t len)
 	return crc & 0xFF;
 }
 
-/*
- * Driver 'main' command.
- */
-extern "C" __EXPORT int teraranger_main(int argc, char *argv[]);
 
 TERARANGER::TERARANGER(uint8_t rotation, int bus, int address) :
 	I2C("TERARANGER", TERARANGER_DEVICE_PATH, bus, address, 100000),
 	ScheduledWorkItem(px4::device_bus_to_wq(get_device_id())),
-	_rotation(rotation),
-	_min_distance(-1.0f),
-	_max_distance(-1.0f),
-	_reports(nullptr),
-	_sensor_ok(false),
-	_valid(0),
-	_measure_interval(0),
-	_collect_phase(false),
-	_class_instance(-1),
-	_orb_class_instance(-1),
-	_distance_sensor_topic(nullptr),
-	_sample_perf(perf_alloc(PC_ELAPSED, "tr1_read")),
-	_comms_errors(perf_alloc(PC_COUNT, "tr1_com_err"))
+	_rotation(rotation)
 {
 	// up the retries since the device misses the first measure attempts
 	I2C::_retries = 3;
@@ -237,10 +223,10 @@ TERARANGER::TERARANGER(uint8_t rotation, int bus, int address) :
 
 TERARANGER::~TERARANGER()
 {
-	/* make sure we are truly inactive */
+	// Ensure we are truly inactive.
 	stop();
 
-	/* free any existing reports */
+	// Free any existing reports.
 	if (_reports != nullptr) {
 		delete _reports;
 	}
@@ -249,7 +235,7 @@ TERARANGER::~TERARANGER()
 		unregister_class_devname(RANGE_FINDER_BASE_DEVICE_PATH, _class_instance);
 	}
 
-	// free perf counters
+	// Free perf counters.
 	perf_free(_sample_perf);
 	perf_free(_comms_errors);
 }
@@ -939,16 +925,21 @@ $ teraranger stop
 
 }
 
-int
-teraranger_main(int argc, char *argv[])
-{
-	int ch;
-	int myoptind = 1;
-	const char *myoptarg = nullptr;
-	uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING;
-	bool start_all = false;
 
+/*
+ * Driver 'main' command.
+ */
+extern "C" __EXPORT int teraranger_main(int argc, char *argv[])
+{
+	const char *myoptarg = nullptr;
+
+	int ch;
 	int i2c_bus = TERARANGER_BUS_DEFAULT;
+	int myoptind = 1;
+
+	uint8_t rotation = distance_sensor_s::ROTATION_DOWNWARD_FACING;
+
+	bool start_all = false;
 
 	while ((ch = px4_getopt(argc, argv, "ab:R:", &myoptind, &myoptarg)) != EOF) {
 		switch (ch) {
