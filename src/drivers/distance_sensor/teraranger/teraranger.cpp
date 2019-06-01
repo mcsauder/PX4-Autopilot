@@ -162,8 +162,8 @@ private:
 	uint8_t _rotation{0};
 	uint8_t _valid{0};
 
-	float _max_distance{TREVO_600HZ_MAX_DISTANCE};
-	float _min_distance{TREVO_600HZ_MIN_DISTANCE};
+	float _max_distance{0};
+	float _min_distance{0};
 
 	orb_advert_t _distance_sensor_topic{nullptr};
 
@@ -235,6 +235,11 @@ TERARANGER::~TERARANGER()
 		unregister_class_devname(RANGE_FINDER_BASE_DEVICE_PATH, _class_instance);
 	}
 
+	// Unadvertise the distance sensor topic.
+	if (_distance_sensor_topic != nullptr) {
+		orb_unadvertise(_distance_sensor_topic);
+	}
+
 	// Free perf counters.
 	perf_free(_sample_perf);
 	perf_free(_comms_errors);
@@ -243,24 +248,23 @@ TERARANGER::~TERARANGER()
 int
 TERARANGER::init()
 {
-	int ret = PX4_ERROR;
-	int hw_model;
+	int hw_model = 0;
 	param_get(param_find("SENS_EN_TRANGER"), &hw_model);
 
 	switch (hw_model) {
-	case 0: /* Disabled */
+	case 0: // Disabled
 		PX4_WARN("Disabled");
-		return ret;
+		return PX4_ERROR;
 
-	case 1: /* Autodetect */
-		/* Assume TROne */
+	case 1: // Autodetect
+		// Assume TROne
 		set_device_address(TRONE_BASEADDR);
 
 		if (I2C::init() != OK) {
 			set_device_address(TREVO_BASEADDR);
 
 			if (I2C::init() != OK) {
-				goto out;
+				return PX4_ERROR;
 
 			} else {
 				_min_distance = TREVO_60M_MIN_DISTANCE;
@@ -274,35 +278,35 @@ TERARANGER::init()
 
 		break;
 
-	case 2: /* TROne */
+	case 2: // TROne.
 		set_device_address(TRONE_BASEADDR);
 
 		if (I2C::init() != OK) {
-			goto out;
+			return PX4_ERROR;
 		}
 
 		_min_distance = TRONE_MIN_DISTANCE;
 		_max_distance = TRONE_MAX_DISTANCE;
 		break;
 
-	case 3: /* TREvo60m */
+	case 3: // TREvo60m.
 		set_device_address(TREVO_BASEADDR);
 
-		/* do I2C init (and probe) first */
+		// I2C init (and probe) first.
 		if (I2C::init() != OK) {
-			goto out;
+			return PX4_ERROR;
 		}
 
 		_min_distance = TREVO_60M_MIN_DISTANCE;
 		_max_distance = TREVO_60M_MAX_DISTANCE;
 		break;
 
-	case 4: /* TREvo600Hz */
+	case 4: // TREvo600Hz.
 		set_device_address(TREVO_BASEADDR);
 
-		/* do I2C init (and probe) first */
+		// I2C init (and probe) first.
 		if (I2C::init() != OK) {
-			goto out;
+			return PX4_ERROR;
 		}
 
 		_min_distance = TREVO_600HZ_MIN_DISTANCE;
@@ -311,20 +315,20 @@ TERARANGER::init()
 
 	default:
 		PX4_ERR("invalid HW model %d.", hw_model);
-		return ret;
+		return PX4_ERROR;
 	}
 
-	/* allocate basic report buffers */
+	// Allocate basic report buffers.
 	_reports = new ringbuffer::RingBuffer(2, sizeof(distance_sensor_s));
 
 	if (_reports == nullptr) {
-		goto out;
+		return PX4_ERROR;
 	}
 
 	_class_instance = register_class_devname(RANGE_FINDER_BASE_DEVICE_PATH);
 
 	if (_class_instance == CLASS_DEVICE_PRIMARY) {
-		/* get a publish handle on the range finder topic */
+		// Get a publish handle on the range finder topic.
 		struct distance_sensor_s ds_report;
 		measure();
 		_reports->get(&ds_report);
@@ -337,11 +341,9 @@ TERARANGER::init()
 		}
 	}
 
-	ret = OK;
-	/* sensor is ok, but we don't really know if it is within range */
+	// Sensor is ok, but we don't really know if it is within range.
 	_sensor_ok = true;
-out:
-	return ret;
+	return PX4_OK;
 }
 
 int
@@ -351,7 +353,7 @@ TERARANGER::probe()
 
 	const uint8_t cmd = TERARANGER_WHO_AM_I_REG;
 
-	// can't use a single transfer as Teraranger needs a bit of time for internal processing
+	// Can't use a single transfer as Teraranger needs a bit of time for internal processing.
 	if (transfer(&cmd, 1, nullptr, 0) == OK) {
 		if (transfer(nullptr, 0, &who_am_i, 1) == OK && who_am_i == TERARANGER_WHO_AM_I_REG_VAL) {
 			return measure();
@@ -362,32 +364,8 @@ TERARANGER::probe()
 		  (unsigned)who_am_i,
 		  TERARANGER_WHO_AM_I_REG_VAL);
 
-	// not found on any address
+	// Not found on any address.
 	return -EIO;
-}
-
-void
-TERARANGER::set_minimum_distance(float min)
-{
-	_min_distance = min;
-}
-
-void
-TERARANGER::set_maximum_distance(float max)
-{
-	_max_distance = max;
-}
-
-float
-TERARANGER::get_minimum_distance()
-{
-	return _min_distance;
-}
-
-float
-TERARANGER::get_maximum_distance()
-{
-	return _max_distance;
 }
 
 int
@@ -513,36 +491,27 @@ TERARANGER::read(device::file_t *filp, char *buffer, size_t buflen)
 int
 TERARANGER::measure()
 {
-	int ret;
-
-	/*
-	 * Send the command to begin a measurement.
-	 */
+	// Send the command to begin a measurement.
 	const uint8_t cmd = TERARANGER_MEASURE_REG;
-	ret = transfer(&cmd, sizeof(cmd), nullptr, 0);
+	int ret = transfer(&cmd, sizeof(cmd), nullptr, 0);
 
-	if (OK != ret) {
+	if (ret != PX4_OK) {
 		perf_count(_comms_errors);
 		PX4_DEBUG("i2c::transfer returned %d", ret);
 		return ret;
 	}
 
-	ret = OK;
-
-	return ret;
+	return PX4_OK;
 }
 
 int
 TERARANGER::collect()
 {
-	int ret = -EIO;
-
-	/* read from the sensor */
-	uint8_t val[3] = {0, 0, 0};
-
+	uint8_t val[3] = {};
 	perf_begin(_sample_perf);
 
-	ret = transfer(nullptr, 0, &val[0], 3);
+	// Transfer data from the bus.
+	int ret = transfer(nullptr, 0, &val[0], 3);
 
 	if (ret < 0) {
 		PX4_DEBUG("error reading from sensor: %d", ret);
@@ -552,37 +521,37 @@ TERARANGER::collect()
 	}
 
 	uint16_t distance_mm = (val[0] << 8) | val[1];
-	float distance_m = float(distance_mm) *  1e-3f;
-	struct distance_sensor_s report;
+	float distance_m = float(distance_mm) * 1e-3f;
 
-	report.timestamp = hrt_absolute_time();
-	/* there is no enum item for a combined LASER and ULTRASOUND which it should be */
-	report.type = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
-	report.orientation = _rotation;
+	distance_sensor_s report;
+	report.orientation      = _rotation;
 	report.current_distance = distance_m;
-	report.min_distance = get_minimum_distance();
-	report.max_distance = get_maximum_distance();
-	report.variance = 0.0f;
-	report.signal_quality = -1;
-	/* TODO: set proper ID */
-	report.id = 0;
+	report.id               = 0; // TODO: set proper ID.
+	report.min_distance     = _min_distance;
+	report.max_distance     = _max_distance;
+	report.signal_quality   = -1;
+	report.timestamp        = hrt_absolute_time();
+	// NOTE: There is no enum item for a combined LASER and ULTRASOUND which this should be.
+	report.type             = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
+	report.variance         = 0.0f;
 
 	// This validation check can be used later
 	_valid = crc8(val, 2) == val[2] && (float)report.current_distance > report.min_distance
 		 && (float)report.current_distance < report.max_distance ? 1 : 0;
 
-	/* publish it, if we are the primary */
+	// Publish the report data if we have a valid topic.
 	if (_distance_sensor_topic != nullptr) {
 		orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &report);
 	}
 
 	_reports->force(&report);
 
-	/* notify anyone waiting for data */
+	// Notify anyone waiting for data.
 	poll_notify(POLLIN);
 
 	ret = OK;
 
+	perf_count(_sample_perf);
 	perf_end(_sample_perf);
 	return ret;
 }
@@ -590,11 +559,11 @@ TERARANGER::collect()
 void
 TERARANGER::start()
 {
-	/* reset the report ring and state machine */
+	// Reset the report ring and state machine.
 	_collect_phase = false;
 	_reports->flush();
 
-	/* schedule a cycle to start things */
+	// Schedule a cycle to start things.
 	ScheduleNow();
 }
 
