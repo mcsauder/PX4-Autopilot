@@ -85,6 +85,8 @@ using namespace time_literals;
 #define TERARANGER_EVO_60M_MAX_DISTANCE         (60.0f)
 #define TERARANGER_EVO_600HZ_MIN_DISTANCE       (0.75f)
 #define TERARANGER_EVO_600HZ_MAX_DISTANCE       (8.0f)
+#define TERARANGER_EVO_3M_MIN_DISTANCE          (0.10f)
+#define TERARANGER_EVO_3M_MAX_DISTANCE          (3.0f)
 
 #define TERARANGER_CONVERSION_INTERVAL	         50_us
 
@@ -315,7 +317,8 @@ TERARANGER::init()
 				return PX4_ERROR;
 
 			} else {
-				_min_distance = TERARANGER_EVO_60M_MIN_DISTANCE;
+				// Assume minimum and maximum possible distances acros Evo family
+				_min_distance = TERARANGER_EVO_3M_MIN_DISTANCE;
 				_max_distance = TERARANGER_EVO_60M_MAX_DISTANCE;
 			}
 
@@ -359,6 +362,18 @@ TERARANGER::init()
 
 		_min_distance = TERARANGER_EVO_600HZ_MIN_DISTANCE;
 		_max_distance = TERARANGER_EVO_600HZ_MAX_DISTANCE;
+		break;
+
+	case 5: // Teraranger Evo600Hz.
+		set_device_address(TERARANGER_EVO_BASEADDR);
+
+		// I2C init (and probe) first.
+		if (I2C::init() != OK) {
+			return PX4_ERROR;
+		}
+
+		_min_distance = TERARANGER_EVO_3M_MIN_DISTANCE;
+		_max_distance = TERARANGER_EVO_3M_MAX_DISTANCE;
 		break;
 
 	default:
