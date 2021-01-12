@@ -72,9 +72,12 @@ TFMINI::~TFMINI()
 int
 TFMINI::init()
 {
-	param_get(param_find("SENS_EN_TFMINI"), &_hw_model);
+	int hw_model = 0;
+	param_get(param_find("SENS_EN_TFMINI"), &hw_model);
 
-	switch (hw_model) {
+	_hw_model = static_cast<TFMINI_MODEL>(hw_model);
+
+	switch (_hw_model) {
 	case TFMINI_MODEL::MODEL_UNKNOWN: // Other TFMINI models (12m, 100 Hz, FOV 2.3)
 		// Note: Sensor specification shows 0.3m as minimum, but in practice
 		// 0.3m is too close to minimum so chattering of invalid sensor decision

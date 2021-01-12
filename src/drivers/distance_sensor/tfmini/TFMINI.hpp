@@ -129,7 +129,7 @@ private:
 
 	PX4Rangefinder	_px4_rangefinder;
 
-	TFMINI_MODEL _hw_model{TFMINI_MODEL::MODEL_UNKNOWN};
+	TFMINI_MODEL _hw_model {TFMINI_MODEL::MODEL_UNKNOWN};
 	TFMINI_PARSE_STATE _parse_state {TFMINI_PARSE_STATE::STATE0_UNSYNC};
 	uint8_t _linebuf[10] {};
 	char _port[20] {};
