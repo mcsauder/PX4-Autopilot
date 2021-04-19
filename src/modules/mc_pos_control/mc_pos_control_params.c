@@ -783,3 +783,16 @@ PARAM_DEFINE_FLOAT(MPC_XY_VEL_ALL, -10.0f);
  * @group Multicopter Position Control
  */
 PARAM_DEFINE_FLOAT(MPC_Z_VEL_ALL, -3.0f);
+
+/**
+ * Auto Manuever Frequency
+ *
+ * Frequency at with to execute the automated manuever.
+ *
+ * @min 0
+ * @max 100
+ * @decimal 1
+ * @increment 0.5
+ * @group Multicopter Position Control
+ */
+PARAM_DEFINE_FLOAT(MPC_AUTOMAN_FREQ, 1.0f);
