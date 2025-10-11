@@ -73,6 +73,8 @@ static void usage(const char *reason)
 		R"DESCR_STR(
 Utility to test actuators.
 
+Note: this is only used in combination with SYS_CTRL_ALLOC=1.
+
 WARNING: remove all props before using this command.
 )DESCR_STR");
 
@@ -88,6 +90,9 @@ WARNING: remove all props before using this command.
 
 	PRINT_MODULE_USAGE_COMMAND_DESCR("iterate-motors", "Iterate all motors starting and stopping one after the other");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("iterate-servos", "Iterate all servos deflecting one after the other");
+
+	PRINT_MODULE_USAGE_COMMAND_DESCR("sweep-motors", "Sweep each motor sequentially starting and stopping one after the other");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("sweep-motors-all", "Sweep all motors concurrently");
 }
 
 int actuator_test_main(int argc, char *argv[])
@@ -182,6 +187,42 @@ int actuator_test_main(int argc, char *argv[])
 				PX4_INFO("Servo %i (%.0f%%)", i, (double)(value*100.f));
 				actuator_test(actuator_test_s::FUNCTION_SERVO1+i, value, 800, false);
 				px4_usleep(1000000);
+			}
+			return 0;
+
+		} else if (strcmp("sweep-motors", argv[myoptind]) == 0) {
+			// for (int i = 0; i < actuator_test_s::MAX_NUM_MOTORS; ++i) {
+			for (int i = 0; i < 2; ++i) {
+				for (value = 0.f; value <= 1.f; value+=0.01f) {
+					PX4_INFO("Motor %i (%.0f%%)", i, (double)(value*100.f));
+					actuator_test(actuator_test_s::FUNCTION_MOTOR1+i, value, 1250, false);
+					px4_usleep(100000);
+				}
+				px4_usleep(1000000);
+				for (value = 1.f; value >= 0.f; value-=0.01f) {
+					PX4_INFO("Motor %i (%.0f%%)", i, (double)(value*100.f));
+					actuator_test(actuator_test_s::FUNCTION_MOTOR1+i, value, 1250, false);
+					px4_usleep(100000);
+				}
+				px4_usleep(2000000);
+			}
+			return 0;
+
+		} else if (strcmp("sweep-motors-all", argv[myoptind]) == 0) {
+			for (value = 0.f; value <= 1.f; value+=0.01f) {
+				for (int i = 0; i < actuator_test_s::MAX_NUM_MOTORS; ++i) {
+					actuator_test(actuator_test_s::FUNCTION_MOTOR1+i, value, 1250, false);
+				}
+				PX4_INFO("Motor sweep (%.0f%%)", (double)(value*100.f));
+				px4_usleep(100000);
+			}
+			px4_usleep(1000000);
+			for (value = 1.f; value >= 0.f; value-=0.01f) {
+				for (int i = 0; i < actuator_test_s::MAX_NUM_MOTORS; ++i) {
+					actuator_test(actuator_test_s::FUNCTION_MOTOR1+i, value, 1250, false);
+				}
+				PX4_INFO("Motor sweep (%.0f%%)", (double)(value*100.f));
+				px4_usleep(100000);
 			}
 			return 0;
 		}
