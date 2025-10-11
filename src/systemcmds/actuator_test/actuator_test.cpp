@@ -48,7 +48,14 @@
 extern "C" __EXPORT int actuator_test_main(int argc, char *argv[]);
 
 static void actuator_test(int function, float value, int timeout_ms, bool release_control);
+static void sweep_motors(int first_motor, int num_motors);
 static void usage(const char *reason);
+
+static constexpr int SWEEP_STEPS = 100;               // 1% per step
+static constexpr int SWEEP_STEP_INTERVAL_US = 100000; // 10 s ramp up, 10 s ramp down
+static constexpr int SWEEP_HOLD_US = 1000000;         // at full output
+static constexpr int SWEEP_PAUSE_US = 2000000;        // between motors
+static constexpr int SWEEP_TIMEOUT_MS = 1250;         // motors stop if the command is interrupted
 
 void actuator_test(int function, float value, int timeout_ms, bool release_control)
 {
@@ -61,6 +68,35 @@ void actuator_test(int function, float value, int timeout_ms, bool release_contr
 
 	uORB::Publication<actuator_test_s> actuator_test_pub{ORB_ID(actuator_test)};
 	actuator_test_pub.publish(actuator_test);
+}
+
+/**
+ * Ramp motors [first_motor, first_motor + num_motors) together from 0 to full output, hold, ramp back to 0
+ * and release them.
+ */
+void sweep_motors(int first_motor, int num_motors)
+{
+	for (int step = 0; step <= 2 * SWEEP_STEPS; ++step) {
+		const int percent = (step <= SWEEP_STEPS) ? step : 2 * SWEEP_STEPS - step;
+		const float value = (float)percent / (float)SWEEP_STEPS;
+
+		for (int i = first_motor; i < first_motor + num_motors; ++i) {
+			actuator_test(actuator_test_s::FUNCTION_MOTOR1 + i, value, SWEEP_TIMEOUT_MS, false);
+		}
+
+		if (num_motors == 1) {
+			PX4_INFO("Motor %i (%i%%)", first_motor + 1, percent);
+
+		} else {
+			PX4_INFO("Motors %i-%i (%i%%)", first_motor + 1, first_motor + num_motors, percent);
+		}
+
+		px4_usleep((step == SWEEP_STEPS) ? SWEEP_HOLD_US : SWEEP_STEP_INTERVAL_US);
+	}
+
+	for (int i = first_motor; i < first_motor + num_motors; ++i) {
+		actuator_test(actuator_test_s::FUNCTION_MOTOR1 + i, NAN, 0, true);
+	}
 }
 
 static void usage(const char *reason)
@@ -88,6 +124,10 @@ WARNING: remove all props before using this command.
 
 	PRINT_MODULE_USAGE_COMMAND_DESCR("iterate-motors", "Iterate all motors starting and stopping one after the other");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("iterate-servos", "Iterate all servos deflecting one after the other");
+	PRINT_MODULE_USAGE_COMMAND_DESCR("sweep-motors",
+					 "Ramp each motor from 0 to 100% and back, one after the other (or only the one given with -m)");
+	PRINT_MODULE_USAGE_PARAM_INT('m', -1, 1, 12, "Motor to sweep (1...12)", true);
+	PRINT_MODULE_USAGE_COMMAND_DESCR("sweep-motors-all", "Ramp all motors together from 0 to 100% and back");
 }
 
 int actuator_test_main(int argc, char *argv[])
@@ -183,6 +223,29 @@ int actuator_test_main(int argc, char *argv[])
 				actuator_test(actuator_test_s::FUNCTION_SERVO1+i, value, 800, false);
 				px4_usleep(1000000);
 			}
+			return 0;
+
+		} else if (strcmp("sweep-motors", argv[myoptind]) == 0) {
+			if (function != 0) {
+				if (function < actuator_test_s::FUNCTION_MOTOR1
+				    || function >= actuator_test_s::FUNCTION_MOTOR1 + actuator_test_s::MAX_NUM_MOTORS) {
+					usage("sweep-motors only accepts a motor (-m)");
+					return 1;
+				}
+
+				sweep_motors(function - actuator_test_s::FUNCTION_MOTOR1, 1);
+
+			} else {
+				for (int i = 0; i < actuator_test_s::MAX_NUM_MOTORS; ++i) {
+					sweep_motors(i, 1);
+					px4_usleep(SWEEP_PAUSE_US);
+				}
+			}
+
+			return 0;
+
+		} else if (strcmp("sweep-motors-all", argv[myoptind]) == 0) {
+			sweep_motors(0, actuator_test_s::MAX_NUM_MOTORS);
 			return 0;
 		}
 	}
